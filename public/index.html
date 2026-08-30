@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Yantra-X | AI Image Generator</title>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <div class="background">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+        <div class="grid"></div>
+        <div class="noise"></div>
+    </div>
+
+    <header class="topbar">
+
+        <a
+            href="#generator"
+            class="brand"
+            data-view-link="generator"
+        >
+            <span class="brand-icon">✦</span>
+            <span>Yantra-X</span>
+        </a>
+
+        <nav class="nav-links">
+
+            <button
+                type="button"
+                class="nav-link active"
+                data-view-link="generator"
+            >
+                <span>✦</span>
+                Create
+            </button>
+
+            <button
+                type="button"
+                class="nav-link"
+                data-view-link="history"
+            >
+                <span>◷</span>
+                History
+            </button>
+
+        </nav>
+
+        <button
+            type="button"
+            class="account-button"
+            id="accountButton"
+            data-view-link="login"
+        >
+            Log in
+        </button>
+
+    </header>
+
+
+    <main class="container">
+
+
+        <!-- =========================
+             GENERATOR
+        ========================== -->
+
+        <section
+            class="view active"
+            id="generator-view"
+            data-view="generator"
+        >
+
+            <div class="hero-section">
+
+                <div class="hero-badge">
+                    <span class="pulse-dot"></span>
+                    POWERED BY AI
+                </div>
+
+                <h1>
+                    Turn your
+                    <span class="gradient-text">
+                        imagination
+                    </span>
+                    into reality.
+                </h1>
+
+                <p class="container-description">
+                    Describe anything you can imagine and let
+                    Yantra-X transform your words into stunning
+                    AI-generated visuals.
+                </p>
+
+            </div>
+
+
+            <div class="generator-box">
+
+                <div class="prompt-header">
+
+                    <div>
+                        <span class="small-icon">✦</span>
+                        <span>Describe your vision</span>
+                    </div>
+
+                    <span class="prompt-label">
+                        AI PROMPT
+                    </span>
+
+                </div>
+
+
+                <textarea
+                    id="prompt"
+                    placeholder="A futuristic city floating above the clouds, cinematic lighting, ultra detailed..."
+                ></textarea>
+
+
+                <div class="generator-footer">
+
+                    <div class="prompt-hint">
+                        <span>✧</span>
+                        Be creative. The more detail, the better.
+                    </div>
+
+                    <button
+                        type="button"
+                        id="generateBtn"
+                        class="generate-button"
+                    >
+                        <span class="button-glow"></span>
+                        <span class="button-content">
+                            <span class="spark">✦</span>
+                            Generate image
+                            <span class="arrow">→</span>
+                        </span>
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <div
+                class="image-container"
+                id="imageContainer"
+            >
+
+                <div class="empty-image-state">
+
+                    <div class="empty-icon">
+                        <span>✦</span>
+                    </div>
+
+                    <h3>
+                        Your creation awaits
+                    </h3>
+
+                    <p>
+                        Enter a prompt above and watch
+                        your imagination come alive.
+                    </p>
+
+                    <div class="loading-lines">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="feature-row">
+
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <div>
+                        <strong>Fast generation</strong>
+                        <span>Create visuals in seconds</span>
+                    </div>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">✧</div>
+                    <div>
+                        <strong>Creative freedom</strong>
+                        <span>Generate anything you imagine</span>
+                    </div>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">◈</div>
+                    <div>
+                        <strong>Your history</strong>
+                        <span>Keep your creations organized</span>
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- =========================
+             HISTORY
+        ========================== -->
+
+        <section
+            class="view"
+            id="history-view"
+            data-view="history"
+        >
+
+            <div class="page-heading">
+
+                <div class="hero-badge">
+                    <span class="pulse-dot"></span>
+                    YOUR WORKSPACE
+                </div>
+
+                <h2>
+                    Creation
+                    <span class="gradient-text">
+                        history
+                    </span>
+                </h2>
+
+                <p class="view-intro">
+                    Revisit your previous AI creations
+                    and prompts.
+                </p>
+
+            </div>
+
+
+            <div
+                class="history-list"
+                id="historyList"
+            ></div>
+
+        </section>
+
+
+
+        <!-- =========================
+             LOGIN
+        ========================== -->
+
+        <section
+            class="view login-view"
+            id="login-view"
+            data-view="login"
+        >
+
+            <div class="auth-card">
+
+                <div class="auth-visual">
+
+                    <div class="visual-orbit orbit-a"></div>
+                    <div class="visual-orbit orbit-b"></div>
+                    <div class="visual-orbit orbit-c"></div>
+
+                    <div class="visual-core">
+                        ✦
+                    </div>
+
+                    <div class="visual-text">
+
+                        <span>
+                            YANTRA-X
+                        </span>
+
+                        <strong>
+                            Create.
+                            <br>
+                            Imagine.
+                            <br>
+                            Explore.
+                        </strong>
+
+                        <p>
+                            Your personal AI creative
+                            workspace.
+                        </p>
+
+                    </div>
+
+                </div>
+
+
+                <div class="auth-content">
+
+                    <div class="auth-logo">
+                        ✦
+                    </div>
+
+                    <div class="eyebrow">
+                        YOUR CREATIVE ACCOUNT
+                    </div>
+
+                    <h2>
+                        Welcome back
+                    </h2>
+
+                    <p class="view-intro">
+                        Log in to continue creating
+                        amazing images.
+                    </p>
+
+
+                    <div class="login-points">
+
+                        <span>
+                            <b>✓</b>
+                            Save your favorite prompts
+                        </span>
+
+                        <span>
+                            <b>✓</b>
+                            Keep your creative history
+                        </span>
+
+                        <span>
+                            <b>✓</b>
+                            Generate AI images
+                        </span>
+
+                    </div>
+
+
+                    <form
+                        class="login-form"
+                        id="loginForm"
+                    >
+
+                        <label>
+                            Email address
+
+                            <div class="input-wrapper">
+
+                                <span>◉</span>
+
+                                <input
+                                    type="email"
+                                    id="email"
+                                    placeholder="you@example.com"
+                                    autocomplete="email"
+                                    required
+                                >
+
+                            </div>
+
+                        </label>
+
+
+                        <label>
+                            Password
+
+                            <div class="input-wrapper">
+
+                                <span>◆</span>
+
+                                <input
+                                    type="password"
+                                    id="password"
+                                    placeholder="Enter your password"
+                                    autocomplete="current-password"
+                                    required
+                                    minlength="6"
+                                >
+
+                                <button
+                                    type="button"
+                                    class="password-toggle"
+                                    id="passwordToggle"
+                                >
+                                    Show
+                                </button>
+
+                            </div>
+
+                        </label>
+
+
+                        <div class="login-options">
+
+                            <label class="remember-option">
+
+                                <input
+                                    type="checkbox"
+                                    id="rememberLogin"
+                                >
+
+                                <span>
+                                    Remember me
+                                </span>
+
+                            </label>
+
+                            <button
+                                type="button"
+                                class="text-button"
+                                id="forgotPassword"
+                            >
+                                Forgot password?
+                            </button>
+
+                        </div>
+
+
+                        <button
+                            type="submit"
+                            id="loginSubmit"
+                            class="auth-button"
+                        >
+                            <span>
+                                Log in
+                            </span>
+
+                            <span>
+                                →
+                            </span>
+                        </button>
+
+
+                        <p
+                            class="form-message"
+                            id="loginMessage"
+                            role="status"
+                        ></p>
+
+
+                        <p class="signup-prompt">
+
+                            New to Yantra-X?
+
+                            <button
+                                type="button"
+                                class="text-button"
+                                id="signupButton"
+                            >
+                                Create an account
+                            </button>
+
+                        </p>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- =========================
+             SIGN UP
+        ========================== -->
+
+        <section
+            class="view signup-view"
+            id="signup-view"
+            data-view="signup"
+        >
+
+            <div class="auth-card">
+
+                <div class="auth-visual signup-visual">
+
+                    <div class="visual-orbit orbit-a"></div>
+                    <div class="visual-orbit orbit-b"></div>
+                    <div class="visual-orbit orbit-c"></div>
+
+                    <div class="visual-core">
+                        ✦
+                    </div>
+
+                    <div class="visual-text">
+
+                        <span>
+                            JOIN THE FUTURE
+                        </span>
+
+                        <strong>
+                            Create.
+                            <br>
+                            Imagine.
+                            <br>
+                            Explore.
+                        </strong>
+
+                        <p>
+                            Build your personal AI
+                            creative workspace.
+                        </p>
+
+                    </div>
+
+                </div>
+
+
+                <div class="auth-content">
+
+                    <div class="auth-logo">
+                        ✦
+                    </div>
+
+                    <div class="eyebrow">
+                        JOIN YANTRA-X
+                    </div>
+
+                    <h2>
+                        Create account
+                    </h2>
+
+                    <p class="view-intro">
+                        Start creating amazing images today.
+                    </p>
+
+
+                    <form
+                        class="login-form"
+                        id="signupForm"
+                    >
+
+                        <label>
+                            Full name
+
+                            <div class="input-wrapper">
+
+                                <span>●</span>
+
+                                <input
+                                    type="text"
+                                    id="signupName"
+                                    placeholder="Your name"
+                                    autocomplete="name"
+                                    required
+                                >
+
+                            </div>
+
+                        </label>
+
+
+                        <label>
+                            Email address
+
+                            <div class="input-wrapper">
+
+                                <span>◉</span>
+
+                                <input
+                                    type="email"
+                                    id="signupEmail"
+                                    placeholder="you@example.com"
+                                    autocomplete="email"
+                                    required
+                                >
+
+                            </div>
+
+                        </label>
+
+
+                        <label>
+                            Password
+
+                            <div class="input-wrapper">
+
+                                <span>◆</span>
+
+                                <input
+                                    type="password"
+                                    id="signupPassword"
+                                    placeholder="Create a password"
+                                    autocomplete="new-password"
+                                    minlength="6"
+                                    required
+                                >
+
+                                <button
+                                    type="button"
+                                    class="password-toggle"
+                                    id="signupPasswordToggle"
+                                >
+                                    Show
+                                </button>
+
+                            </div>
+
+                        </label>
+
+
+                        <label>
+                            Confirm password
+
+                            <div class="input-wrapper">
+
+                                <span>◆</span>
+
+                                <input
+                                    type="password"
+                                    id="confirmPassword"
+                                    placeholder="Confirm your password"
+                                    autocomplete="new-password"
+                                    minlength="6"
+                                    required
+                                >
+
+                                <button
+                                    type="button"
+                                    class="password-toggle"
+                                    id="confirmPasswordToggle"
+                                >
+                                    Show
+                                </button>
+
+                            </div>
+
+                        </label>
+
+
+                        <button
+                            type="submit"
+                            id="signupSubmit"
+                            class="auth-button"
+                        >
+
+                            <span>
+                                Create account
+                            </span>
+
+                            <span>
+                                →
+                            </span>
+
+                        </button>
+
+
+                        <p
+                            class="form-message"
+                            id="signupMessage"
+                            role="status"
+                        ></p>
+
+
+                        <p class="signup-prompt">
+
+                            Already have an account?
+
+                            <button
+                                type="button"
+                                class="text-button"
+                                id="backToLogin"
+                            >
+                                Log in
+                            </button>
+
+                        </p>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <script src="script.js"></script>
+
+</body>
+
+</html>

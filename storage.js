@@ -1,272 +1,98 @@
-// ============================================================
-// MEMBER 4 — DATABASE, HISTORY & TESTING
-// ============================================================
-
 const fs = require("fs");
 const path = require("path");
 
+const DATA_DIR = path.join(__dirname, "data");
 
-// ============================================================
-// DATA DIRECTORY
-// ============================================================
+const USERS_FILE = path.join(DATA_DIR, "users.json");
+const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
+const HISTORY_FILE = path.join(DATA_DIR, "history.json");
 
-const DATA_DIRECTORY =
-    path.join(
-        __dirname,
-        "data"
-    );
+function ensureData() {
+    if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
 
+    if (!fs.existsSync(USERS_FILE)) {
+        fs.writeFileSync(USERS_FILE, "[]");
+    }
 
-const USERS_FILE =
-    path.join(
-        DATA_DIRECTORY,
-        "users.json"
-    );
+    if (!fs.existsSync(SESSIONS_FILE)) {
+        fs.writeFileSync(SESSIONS_FILE, "{}");
+    }
 
-
-const HISTORY_FILE =
-    path.join(
-        DATA_DIRECTORY,
-        "history.json"
-    );
-
-
-const SESSIONS_FILE =
-    path.join(
-        DATA_DIRECTORY,
-        "sessions.json"
-    );
-
-
-// ============================================================
-// CREATE DATA DIRECTORY
-// ============================================================
-
-function ensureDataDirectory() {
-
-    if (
-        !fs.existsSync(
-            DATA_DIRECTORY
-        )
-    ) {
-
-        fs.mkdirSync(
-            DATA_DIRECTORY,
-            {
-                recursive: true
-            }
-        );
+    if (!fs.existsSync(HISTORY_FILE)) {
+        fs.writeFileSync(HISTORY_FILE, "[]");
     }
 }
 
-
-// ============================================================
-// CREATE FILE IF IT DOES NOT EXIST
-// ============================================================
-
-function ensureFile(filePath, defaultValue) {
-
-    ensureDataDirectory();
-
-
-    if (
-        !fs.existsSync(filePath)
-    ) {
-
-        fs.writeFileSync(
-
-            filePath,
-
-            JSON.stringify(
-                defaultValue,
-                null,
-                2
-            )
-        );
-    }
-}
-
-
-// ============================================================
-// READ JSON
-// ============================================================
-
-function readJSON(
-    filePath,
-    defaultValue
-) {
-
-    ensureFile(
-        filePath,
-        defaultValue
-    );
-
+function readJSON(file, fallback) {
+    ensureData();
 
     try {
-
-        const data =
-            fs.readFileSync(
-                filePath,
-                "utf8"
-            );
-
-
-        return JSON.parse(data);
-
-
-    } catch (error) {
-
-        console.error(
-            `Could not read ${filePath}:`,
-            error
+        return JSON.parse(
+            fs.readFileSync(file, "utf8")
         );
-
-
-        return defaultValue;
+    } catch {
+        return fallback;
     }
 }
 
-
-// ============================================================
-// WRITE JSON
-// ============================================================
-
-function writeJSON(
-    filePath,
-    data
-) {
-
-    ensureDataDirectory();
-
+function writeJSON(file, data) {
+    ensureData();
 
     fs.writeFileSync(
-
-        filePath,
-
-        JSON.stringify(
-            data,
-            null,
-            2
-        )
+        file,
+        JSON.stringify(data, null, 2)
     );
 }
-
-
-// ============================================================
-// USERS
-// ============================================================
 
 function loadUsers() {
-
-    return readJSON(
-        USERS_FILE,
-        []
-    );
+    return readJSON(USERS_FILE, []);
 }
-
 
 function saveUsers(users) {
-
-    writeJSON(
-        USERS_FILE,
-        users
-    );
+    writeJSON(USERS_FILE, users);
 }
-
-
-// ============================================================
-// SESSIONS
-// ============================================================
 
 function loadSessions() {
-
-    return readJSON(
-        SESSIONS_FILE,
-        {}
-    );
+    return readJSON(SESSIONS_FILE, {});
 }
-
 
 function saveSessions(sessions) {
-
-    writeJSON(
-        SESSIONS_FILE,
-        sessions
-    );
+    writeJSON(SESSIONS_FILE, sessions);
 }
-
-
-// ============================================================
-// HISTORY
-// ============================================================
 
 function loadHistory() {
-
-    return readJSON(
-        HISTORY_FILE,
-        []
-    );
+    return readJSON(HISTORY_FILE, []);
 }
-
 
 function saveHistory(history) {
-
-    writeJSON(
-        HISTORY_FILE,
-        history
-    );
+    writeJSON(HISTORY_FILE, history);
 }
 
-
-// ============================================================
-// ADD HISTORY
-// ============================================================
-
 function addHistory(item) {
-
-    const history =
-        loadHistory();
-
+    const history = loadHistory();
 
     history.unshift(item);
 
-
-    saveHistory(history);
-}
-
-
-// ============================================================
-// GET USER HISTORY
-// ============================================================
-
-function getUserHistory(userId) {
-
-    const history =
-        loadHistory();
-
-
-    return history.filter(
-        item =>
-            item.userId === userId
+    saveHistory(
+        history.slice(0, 100)
     );
 }
 
-
-// ============================================================
-// EXPORT
-// ============================================================
+function getUserHistory(userId) {
+    return loadHistory().filter(
+        item => item.userId === userId
+    );
+}
 
 module.exports = {
-
     loadUsers,
     saveUsers,
-
     loadSessions,
     saveSessions,
-
     loadHistory,
     saveHistory,
-
     addHistory,
     getUserHistory
 };
