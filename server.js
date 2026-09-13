@@ -1,991 +1,2007 @@
+"use strict";
+
 require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
-const path = require("path");
-const fs = require("fs");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
-const { generateCloudflareImage } = require("./cloudflare");
+const {
+    generateCloudflareImage
+} = require("./cloudflare");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+const PORT =
+    Number(process.env.PORT) || 3000;
 
-app.use(express.static(path.join(__dirname, "public")));
+const ROOT =
+    __dirname;
 
-const DATA_DIR = path.join(__dirname, "data");
+const PUBLIC =
+    path.join(
+        ROOT,
+        "public"
+    );
 
-const USERS_FILE = path.join(DATA_DIR, "users.json");
-const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
-const HISTORY_FILE = path.join(DATA_DIR, "history.json");
+const DATA =
+    path.join(
+        ROOT,
+        "data"
+    );
 
+const GENERATED =
+    path.join(
+        ROOT,
+        "generated"
+    );
 
-// ============================================================
-// FILE SYSTEM
-// ============================================================
+const USERS =
+    path.join(
+        DATA,
+        "users.json"
+    );
 
-function ensureData() {
-    if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
+const SESSIONS =
+    path.join(
+        DATA,
+        "sessions.json"
+    );
+
+const HISTORY =
+    path.join(
+        DATA,
+        "history.json"
+    );
+
+/* =====================================================
+   SETUP
+===================================================== */
+
+fs.mkdirSync(
+    DATA,
+    {
+        recursive: true
     }
+);
 
-    if (!fs.existsSync(USERS_FILE)) {
-        fs.writeFileSync(USERS_FILE, "[]");
+fs.mkdirSync(
+    GENERATED,
+    {
+        recursive: true
     }
+);
 
-    if (!fs.existsSync(SESSIONS_FILE)) {
-        fs.writeFileSync(SESSIONS_FILE, "{}");
-    }
-
-    if (!fs.existsSync(HISTORY_FILE)) {
-        fs.writeFileSync(HISTORY_FILE, "[]");
+function createFile(
+    file,
+    value
+) {
+    if (!fs.existsSync(file)) {
+        fs.writeFileSync(
+            file,
+            JSON.stringify(
+                value,
+                null,
+                2
+            ),
+            "utf8"
+        );
     }
 }
 
-ensureData();
+createFile(
+    USERS,
+    []
+);
 
+createFile(
+    SESSIONS,
+    []
+);
 
-function readJSON(file, fallback) {
+createFile(
+    HISTORY,
+    []
+);
+
+/* =====================================================
+   JSON DATABASE
+===================================================== */
+
+function readJSON(
+    file,
+    fallback = []
+) {
     try {
-        return JSON.parse(fs.readFileSync(file, "utf8"));
+        return JSON.parse(
+            fs.readFileSync(
+                file,
+                "utf8"
+            )
+        );
     } catch {
         return fallback;
     }
 }
 
-
-function writeJSON(file, data) {
+function writeJSON(
+    file,
+    data
+) {
     fs.writeFileSync(
         file,
-        JSON.stringify(data, null, 2)
+        JSON.stringify(
+            data,
+            null,
+            2
+        ),
+        "utf8"
     );
 }
 
+/* =====================================================
+   PASSWORD
+===================================================== */
 
-// ============================================================
-// PASSWORD
-// ============================================================
+function hashPassword(
+    password
+) {
+    const salt =
+        crypto
+            .randomBytes(16)
+            .toString("hex");
 
-function hashPassword(password) {
-    return crypto
-        .createHash("sha256")
-        .update(password)
-        .digest("hex");
+    const hash =
+        crypto
+            .scryptSync(
+                String(password),
+                salt,
+                64
+            )
+            .toString("hex");
+
+    return (
+        `scrypt:${salt}:${hash}`
+    );
 }
 
+function verifyPassword(
+    password,
+    stored
+) {
+    if (!stored) {
+        return false;
+    }
 
-// ============================================================
-// TOKEN
-// ============================================================
+    if (
+        stored.startsWith(
+            "scrypt:"
+        )
+    ) {
+        const parts =
+            stored.split(":");
+
+        if (
+            parts.length !== 3
+        ) {
+            return false;
+        }
+
+        const salt =
+            parts[1];
+
+        const oldHash =
+            parts[2];
+
+        const hash =
+            crypto
+                .scryptSync(
+                    String(password),
+                    salt,
+                    64
+                )
+                .toString("hex");
+
+        return (
+            hash === oldHash
+        );
+    }
+
+    const old =
+        crypto
+            .createHash(
+                "sha256"
+            )
+            .update(
+                String(password)
+            )
+            .digest("hex");
+
+    return (
+        old === stored
+    );
+}
+
+/* =====================================================
+   TOKEN
+===================================================== */
 
 function createToken() {
-    return crypto.randomBytes(32).toString("hex");
+    return crypto
+        .randomBytes(32)
+        .toString("hex");
 }
 
+/* =====================================================
+   INPUT
+===================================================== */
 
-// ============================================================
-// AUTH MIDDLEWARE
-// ============================================================
-
-function getToken(req) {
-    const auth = req.headers.authorization || "";
-
-    if (auth.startsWith("Bearer ")) {
-        return auth.substring(7).trim();
-    }
-
-    return null;
+function cleanPrompt(
+    value
+) {
+    return String(
+        value || ""
+    )
+        .replace(
+            /\s+/g,
+            " "
+        )
+        .trim()
+        .slice(
+            0,
+            4000
+        );
 }
 
+/*
+ * AI MODE:
+ *
+ * "AI futuristic car"
+ *
+ * REAL IMAGE MODE:
+ *
+ * "Dhoni"
+ * "Lion"
+ * "Taj Mahal"
+ * "BMW M5"
+ */
 
-function getCurrentUser(req) {
+function isAIRequest(
+    prompt
+) {
+    return /\bai\b/i.test(
+        String(prompt || "")
+    );
+}
 
-    const token = getToken(req);
+function removeAIKeyword(
+    prompt
+) {
+    return String(
+        prompt || ""
+    )
+        .replace(
+            /\bai\b/gi,
+            " "
+        )
+        .replace(
+            /\s+/g,
+            " "
+        )
+        .trim();
+}
 
-    if (!token) {
+/* =====================================================
+   REFERENCE IMAGE
+===================================================== */
+
+function parseDataUrl(
+    dataUrl
+) {
+    if (!dataUrl) {
         return null;
     }
 
-    const sessions = readJSON(
-        SESSIONS_FILE,
-        {}
-    );
-
-    const userId = sessions[token];
-
-    if (!userId) {
-        return null;
+    if (
+        typeof dataUrl !==
+        "string"
+    ) {
+        throw new Error(
+            "Invalid reference image."
+        );
     }
 
-    const users = readJSON(
-        USERS_FILE,
-        []
-    );
+    const match =
+        dataUrl.match(
+            /^data:(image\/(?:png|jpeg|jpg|webp));base64,([A-Za-z0-9+/=\r\n]+)$/i
+        );
 
-    return users.find(
-        user => user.id === userId
-    ) || null;
-}
-
-
-function requireAuth(req, res, next) {
-
-    const user = getCurrentUser(req);
-
-    if (!user) {
-        return res.status(401).json({
-            success: false,
-            message: "Please log in first."
-        });
+    if (!match) {
+        throw new Error(
+            "Reference image must be PNG, JPG, JPEG, or WEBP."
+        );
     }
 
-    req.user = user;
+    let mimeType =
+        match[1].toLowerCase();
 
-    next();
+    if (
+        mimeType ===
+        "image/jpg"
+    ) {
+        mimeType =
+            "image/jpeg";
+    }
+
+    const buffer =
+        Buffer.from(
+            match[2].replace(
+                /\s/g,
+                ""
+            ),
+            "base64"
+        );
+
+    if (!buffer.length) {
+        throw new Error(
+            "Reference image is empty."
+        );
+    }
+
+    if (
+        buffer.length >
+        8 * 1024 * 1024
+    ) {
+        throw new Error(
+            "Reference image is too large. Maximum size is 8 MB."
+        );
+    }
+
+    return {
+        mimeType,
+        buffer
+    };
 }
 
+/* =====================================================
+   MIME
+===================================================== */
 
-// ============================================================
-// REGISTER
-// ============================================================
+function extensionFromMime(
+    mimeType
+) {
+    const mime =
+        String(
+            mimeType || ""
+        ).toLowerCase();
 
-app.post("/api/register", (req, res) => {
+    if (
+        mime.includes("jpeg") ||
+        mime.includes("jpg")
+    ) {
+        return "jpg";
+    }
+
+    if (
+        mime.includes("webp")
+    ) {
+        return "webp";
+    }
+
+    if (
+        mime.includes("gif")
+    ) {
+        return "gif";
+    }
+
+    if (
+        mime.includes("avif")
+    ) {
+        return "avif";
+    }
+
+    return "png";
+}
+
+/* =====================================================
+   SAVE IMAGE BUFFER
+===================================================== */
+
+function saveBufferAsImage(
+    buffer,
+    mimeType = "image/jpeg"
+) {
+    if (
+        !Buffer.isBuffer(buffer) ||
+        !buffer.length
+    ) {
+        throw new Error(
+            "Image data is empty."
+        );
+    }
+
+    const extension =
+        extensionFromMime(
+            mimeType
+        );
+
+    const filename =
+        `${Date.now()}-${crypto
+            .randomBytes(8)
+            .toString("hex")}.${extension}`;
+
+    const filePath =
+        path.join(
+            GENERATED,
+            filename
+        );
+
+    fs.writeFileSync(
+        filePath,
+        buffer
+    );
+
+    return (
+        `/generated/${filename}`
+    );
+}
+
+/* =====================================================
+   SAVE CLOUDFLARE BASE64 IMAGE
+===================================================== */
+
+function persistBase64Image(
+    image,
+    mimeType = "image/png"
+) {
+    if (!image) {
+        throw new Error(
+            "Cloudflare returned no image."
+        );
+    }
+
+    let base64 =
+        String(image);
+
+    if (
+        base64.startsWith(
+            "data:"
+        )
+    ) {
+        const comma =
+            base64.indexOf(",");
+
+        if (
+            comma !== -1
+        ) {
+            base64 =
+                base64.substring(
+                    comma + 1
+                );
+        }
+    }
+
+    base64 =
+        base64.replace(
+            /\s/g,
+            ""
+        );
+
+    const buffer =
+        Buffer.from(
+            base64,
+            "base64"
+        );
+
+    if (!buffer.length) {
+        throw new Error(
+            "Generated image is empty."
+        );
+    }
+
+    return saveBufferAsImage(
+        buffer,
+        mimeType
+    );
+}
+
+/* =====================================================
+   DOWNLOAD REAL INTERNET IMAGE
+===================================================== */
+
+async function downloadRealImage(
+    url
+) {
+    if (
+        !url ||
+        !/^https?:\/\//i.test(
+            url
+        )
+    ) {
+        throw new Error(
+            "Invalid image URL."
+        );
+    }
+
+    const controller =
+        new AbortController();
+
+    const timeout =
+        setTimeout(
+            () => controller.abort(),
+            12000
+        );
 
     try {
+        const response =
+            await fetch(
+                url,
+                {
+                    method: "GET",
+                    redirect: "follow",
+                    signal:
+                        controller.signal,
 
-        const name =
-            String(req.body.name || "").trim();
+                    headers: {
+                        "User-Agent":
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153 Safari/537.36",
 
-        const email =
-            String(req.body.email || "")
-                .trim()
-                .toLowerCase();
-
-        const password =
-            String(req.body.password || "");
-
-        if (!name) {
-            return res.status(400).json({
-                success: false,
-                message: "Name is required."
-            });
-        }
-
-        if (!email) {
-            return res.status(400).json({
-                success: false,
-                message: "Email is required."
-            });
-        }
-
-        if (password.length < 6) {
-            return res.status(400).json({
-                success: false,
-                message: "Password must contain at least 6 characters."
-            });
-        }
-
-        const users =
-            readJSON(USERS_FILE, []);
-
-        const existing =
-            users.find(
-                user => user.email === email
+                        "Accept":
+                            "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+                    }
+                }
             );
 
-        if (existing) {
-
-            return res.status(409).json({
-                success: false,
-                message: "An account with this email already exists."
-            });
+        if (!response.ok) {
+            throw new Error(
+                `Image server returned ${response.status}.`
+            );
         }
 
-        const user = {
+        const contentType =
+            String(
+                response.headers.get(
+                    "content-type"
+                ) || ""
+            ).toLowerCase();
 
-            id: crypto.randomUUID(),
+        if (
+            !contentType.startsWith(
+                "image/"
+            )
+        ) {
+            throw new Error(
+                "URL did not return an image."
+            );
+        }
 
-            name,
+        const contentLength =
+            Number(
+                response.headers.get(
+                    "content-length"
+                )
+            ) || 0;
 
-            email,
+        if (
+            contentLength >
+            15 * 1024 * 1024
+        ) {
+            throw new Error(
+                "Image is larger than 15 MB."
+            );
+        }
 
-            password: hashPassword(password),
+        const arrayBuffer =
+            await response.arrayBuffer();
 
-            createdAt: new Date().toISOString()
+        const buffer =
+            Buffer.from(
+                arrayBuffer
+            );
 
+        if (!buffer.length) {
+            throw new Error(
+                "Downloaded image is empty."
+            );
+        }
+
+        if (
+            buffer.length >
+            15 * 1024 * 1024
+        ) {
+            throw new Error(
+                "Downloaded image is larger than 15 MB."
+            );
+        }
+
+        return {
+            buffer,
+
+            mimeType:
+                contentType
+                    .split(";")[0]
+                    .trim()
         };
-
-        users.push(user);
-
-        writeJSON(
-            USERS_FILE,
-            users
-        );
-
-        // Automatically log the user in
-        const token = createToken();
-
-        const sessions =
-            readJSON(
-                SESSIONS_FILE,
-                {}
-            );
-
-        sessions[token] = user.id;
-
-        writeJSON(
-            SESSIONS_FILE,
-            sessions
-        );
-
-        return res.json({
-
-            success: true,
-
-            message: "Account created successfully.",
-
-            token,
-
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email
-            }
-
-        });
-
-    } catch (error) {
-
-        console.error("REGISTER ERROR:", error);
-
-        return res.status(500).json({
-            success: false,
-            message: "Unable to create account."
-        });
-    }
-});
-
-
-// ============================================================
-// LOGIN
-// ============================================================
-
-app.post("/api/login", (req, res) => {
-
-    try {
-
-        const email =
-            String(req.body.email || "")
-                .trim()
-                .toLowerCase();
-
-        const password =
-            String(req.body.password || "");
-
-        const users =
-            readJSON(
-                USERS_FILE,
-                []
-            );
-
-        const user =
-            users.find(
-                u => u.email === email
-            );
-
-        if (!user) {
-
-            return res.status(401).json({
-                success: false,
-                message: "Incorrect email or password."
-            });
-        }
-
-        const passwordHash =
-            hashPassword(password);
-
-        if (user.password !== passwordHash) {
-
-            return res.status(401).json({
-                success: false,
-                message: "Incorrect email or password."
-            });
-        }
-
-        const token =
-            createToken();
-
-        const sessions =
-            readJSON(
-                SESSIONS_FILE,
-                {}
-            );
-
-        sessions[token] =
-            user.id;
-
-        writeJSON(
-            SESSIONS_FILE,
-            sessions
-        );
-
-        return res.json({
-
-            success: true,
-
-            message: "Login successful.",
-
-            token,
-
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email
-            }
-
-        });
-
-    } catch (error) {
-
-        console.error("LOGIN ERROR:", error);
-
-        return res.status(500).json({
-            success: false,
-            message: "Login failed."
-        });
-    }
-});
-
-
-// ============================================================
-// LOGOUT
-// ============================================================
-
-app.post("/api/logout", (req, res) => {
-
-    const token =
-        getToken(req);
-
-    if (token) {
-
-        const sessions =
-            readJSON(
-                SESSIONS_FILE,
-                {}
-            );
-
-        delete sessions[token];
-
-        writeJSON(
-            SESSIONS_FILE,
-            sessions
+    } finally {
+        clearTimeout(
+            timeout
         );
     }
+}
 
-    res.json({
-        success: true,
-        message: "Logged out."
-    });
-});
+/* =====================================================
+   REAL IMAGE SEARCH
+===================================================== */
 
-
-// ============================================================
-// CURRENT USER
-// ============================================================
-
-app.get("/api/me", (req, res) => {
-
-    const user =
-        getCurrentUser(req);
-
-    if (!user) {
-
-        return res.status(401).json({
-            success: false,
-            message: "Not logged in."
-        });
-    }
-
-    res.json({
-
-        success: true,
-
-        user: {
-            id: user.id,
-            name: user.name,
-            email: user.email
-        }
-
-    });
-});
-
-
-// ============================================================
-// SERPAPI IMAGE SEARCH
-// ============================================================
-
-async function searchSerpApi(query) {
-
-    const apiKey =
+async function searchRealImage(
+    query
+) {
+    const key =
         process.env.SERPAPI_KEY;
 
-    if (!apiKey) {
+    if (!key) {
         throw new Error(
-            "SERPAPI_KEY is missing in .env"
+            "SERPAPI_KEY is not configured."
         );
     }
 
     const url =
-        "https://serpapi.com/search.json?" +
-        new URLSearchParams({
+        new URL(
+            "https://serpapi.com/search.json"
+        );
 
-            engine: "google_images",
+    url.searchParams.set(
+        "engine",
+        "google_images"
+    );
 
-            q: query,
+    url.searchParams.set(
+        "q",
+        query
+    );
 
-            api_key: apiKey,
+    url.searchParams.set(
+        "api_key",
+        key
+    );
 
-            safe: "active"
+    url.searchParams.set(
+        "hl",
+        "en"
+    );
 
-        }).toString();
+    url.searchParams.set(
+        "gl",
+        "in"
+    );
+
+    /*
+     * Ask Google Images for
+     * photographic results.
+     */
+    url.searchParams.set(
+        "image_type",
+        "photo"
+    );
+
+    url.searchParams.set(
+        "safe",
+        "active"
+    );
 
     const response =
-        await fetch(url);
+        await fetch(
+            url,
+            {
+                headers: {
+                    "User-Agent":
+                        "Yantra-X/1.0"
+                }
+            }
+        );
 
     const data =
         await response.json();
 
     if (!response.ok) {
-
-        console.error(
-            "SERPAPI ERROR:",
-            data
-        );
-
         throw new Error(
             data?.error ||
-            "SerpAPI image search failed."
+            "Google Images search failed."
         );
     }
 
-    if (
-        !data.images_results ||
-        data.images_results.length === 0
-    ) {
+    const results =
+        Array.isArray(
+            data.images_results
+        )
+            ? data.images_results
+            : [];
 
+    if (!results.length) {
         throw new Error(
-            "No matching images were found."
+            `No real image found for "${query}".`
         );
     }
 
-    return data.images_results;
-}
+    /*
+     * Try multiple results.
+     *
+     * Some image websites block
+     * server-side downloading.
+     */
+    const usable =
+        results
+            .filter(
+                item =>
+                    item &&
+                    (
+                        item.original ||
+                        item.thumbnail
+                    )
+            )
+            .slice(
+                0,
+                12
+            );
 
+    let lastError =
+        null;
 
-// ============================================================
-// DETECT REAL / EXISTING SUBJECT
-// ============================================================
+    for (
+        const item
+        of usable
+    ) {
+        const imageUrl =
+            item.original ||
+            item.thumbnail;
 
-function shouldUseImageSearch(prompt) {
-
-    const text =
-        prompt
-            .toLowerCase()
-            .trim();
-
-    const realPersonKeywords = [
-
-        "prabhas",
-        "prabhas actor",
-
-        "virat kohli",
-        "ms dhoni",
-        "dhoni",
-
-        "rohit sharma",
-
-        "sachin tendulkar",
-
-        "shah rukh khan",
-        "shahrukh khan",
-
-        "salman khan",
-
-        "aamir khan",
-
-        "amitabh bachchan",
-
-        "alluarjun",
-        "allu arjun",
-
-        "ram charan",
-
-        "jr ntr",
-
-        "deepika padukone",
-
-        "alia bhatt",
-
-        "rashmika mandanna",
-
-        "vijay deverakonda",
-
-        "mahesh babu"
-
-    ];
-
-    const words =
-        text.split(/\s+/);
-
-    return realPersonKeywords.some(
-        person => {
-
-            if (text.includes(person)) {
-                return true;
-            }
-
-            return person
-                .split(/\s+/)
-                .every(
-                    word =>
-                        words.includes(word)
+        try {
+            const downloaded =
+                await downloadRealImage(
+                    imageUrl
                 );
+
+            const localImage =
+                saveBufferAsImage(
+                    downloaded.buffer,
+                    downloaded.mimeType
+                );
+
+            return {
+                image:
+                    localImage,
+
+                imageUrl:
+                    localImage,
+
+                originalUrl:
+                    imageUrl,
+
+                thumbnail:
+                    item.thumbnail ||
+                    imageUrl,
+
+                title:
+                    item.title ||
+                    query,
+
+                source:
+                    item.source ||
+                    "",
+
+                sourceUrl:
+                    item.link ||
+                    "",
+
+                originalWidth:
+                    item.original_width ||
+                    null,
+
+                originalHeight:
+                    item.original_height ||
+                    null
+            };
+        } catch (error) {
+            lastError =
+                error;
+
+            console.log(
+                `[YANTRA-X] Real image download failed. Trying next result: ${error.message}`
+            );
         }
+    }
+
+    throw new Error(
+        `Google found images, but Yantra-X could not download a usable real image. ${
+            lastError
+                ? lastError.message
+                : ""
+        }`
     );
 }
 
-
-// ============================================================
-// IMAGE SEARCH ROUTE
-// ============================================================
-
-app.post(
-    "/api/search-image",
-    requireAuth,
-    async (req, res) => {
-
-        try {
-
-            const prompt =
-                String(
-                    req.body.prompt || ""
-                ).trim();
-
-            if (!prompt) {
-
-                return res.status(400).json({
-                    success: false,
-                    message: "Search prompt is required."
-                });
-            }
-
-            const results =
-                await searchSerpApi(prompt);
-
-            const images =
-                results
-                    .slice(0, 10)
-                    .map(item => ({
-
-                        title:
-                            item.title ||
-                            prompt,
-
-                        image:
-                            item.original ||
-                            item.thumbnail,
-
-                        source:
-                            item.link ||
-                            ""
-
-                    }))
-                    .filter(
-                        item => item.image
-                    );
-
-            if (!images.length) {
-
-                return res.status(404).json({
-                    success: false,
-                    message: "No usable image found."
-                });
-            }
-
-            return res.json({
-
-                success: true,
-
-                type: "search",
-
-                prompt,
-
-                image: images[0].image,
-
-                images
-
-            });
-
-        } catch (error) {
-
-            console.error(
-                "IMAGE SEARCH ERROR:",
-                error
-            );
-
-            return res.status(500).json({
-
-                success: false,
-
-                message:
-                    error.message ||
-                    "Image search failed."
-
-            });
-        }
-    }
-);
-
-
-// ============================================================
-// GENERATE / SEARCH IMAGE
-// ============================================================
-
-app.post(
-    "/api/generate",
-    requireAuth,
-    async (req, res) => {
-
-        try {
-
-            const prompt =
-                String(
-                    req.body.prompt || ""
-                ).trim();
-
-            if (!prompt) {
-
-                return res.status(400).json({
-                    success: false,
-                    message: "Prompt is required."
-                });
-            }
-
-
-            // ------------------------------------------------
-            // REAL PERSON / EXISTING SUBJECT
-            // ------------------------------------------------
-
-            if (
-                shouldUseImageSearch(prompt)
-            ) {
-
-                console.log(
-                    `Searching real image for: ${prompt}`
-                );
-
-                const results =
-                    await searchSerpApi(
-                        prompt
-                    );
-
-                const images =
-                    results
-                        .slice(0, 10)
-                        .map(item => ({
-
-                            title:
-                                item.title ||
-                                prompt,
-
-                            image:
-                                item.original ||
-                                item.thumbnail,
-
-                            source:
-                                item.link ||
-                                ""
-
-                        }))
-                        .filter(
-                            item => item.image
-                        );
-
-                if (!images.length) {
-
-                    throw new Error(
-                        "No matching image found."
-                    );
-                }
-
-                const selected =
-                    images[0];
-
-
-                saveHistory({
-
-                    id:
-                        crypto.randomUUID(),
-
-                    userId:
-                        req.user.id,
-
-                    prompt,
-
-                    type:
-                        "image-search",
-
-                    image:
-                        selected.image,
-
-                    source:
-                        selected.source,
-
-                    createdAt:
-                        new Date().toISOString()
-
-                });
-
-
-                return res.json({
-
-                    success: true,
-
-                    type:
-                        "image-search",
-
-                    prompt,
-
-                    image:
-                        selected.image,
-
-                    images
-
-                });
-            }
-
-
-            // ------------------------------------------------
-            // AI GENERATION
-            // ------------------------------------------------
-
-            console.log(
-                `Generating AI image for: ${prompt}`
-            );
-
-            const image =
-                await generateCloudflareImage(
-                    prompt
-                );
-
-
-            saveHistory({
-
-                id:
-                    crypto.randomUUID(),
-
-                userId:
-                    req.user.id,
-
-                prompt,
-
-                type:
-                    "ai-generated",
-
-                image,
-
-                createdAt:
-                    new Date().toISOString()
-
-            });
-
-
-            return res.json({
-
-                success: true,
-
-                type:
-                    "ai-generated",
-
-                prompt,
-
-                image
-
-            });
-
-
-        } catch (error) {
-
-            console.error(
-                "GENERATION ERROR:",
-                error
-            );
-
-            return res.status(500).json({
-
-                success: false,
-
-                message:
-                    error.message ||
-                    "Image generation failed."
-
-            });
-        }
-    }
-);
-
-
-// ============================================================
-// GENERATE-AI COMPATIBILITY ROUTE
-// ============================================================
-
-app.post(
-    "/api/generate-ai",
-    requireAuth,
-    async (req, res) => {
-
-        try {
-
-            const prompt =
-                String(
-                    req.body.prompt || ""
-                ).trim();
-
-            if (!prompt) {
-
-                return res.status(400).json({
-                    success: false,
-                    message: "Prompt is required."
-                });
-            }
-
-            const image =
-                await generateCloudflareImage(
-                    prompt
-                );
-
-            saveHistory({
-
-                id:
-                    crypto.randomUUID(),
-
-                userId:
-                    req.user.id,
-
-                prompt,
-
-                type:
-                    "ai-generated",
-
-                image,
-
-                createdAt:
-                    new Date().toISOString()
-
-            });
-
-            res.json({
-
-                success: true,
-
-                type:
-                    "ai-generated",
-
-                prompt,
-
-                image
-
-            });
-
-        } catch (error) {
-
-            console.error(
-                "AI GENERATION ERROR:",
-                error
-            );
-
-            res.status(500).json({
-
-                success: false,
-
-                message:
-                    error.message
-
-            });
-        }
-    }
-);
-
-
-// ============================================================
-// HISTORY
-// ============================================================
-
-function saveHistory(item) {
-
+/* =====================================================
+   HISTORY
+===================================================== */
+
+function saveHistory(
+    userId,
+    prompt,
+    imageUrl,
+    type,
+    seed,
+    model,
+    extra = {}
+) {
     const history =
         readJSON(
-            HISTORY_FILE,
+            HISTORY,
             []
         );
 
-    history.unshift(item);
+    const item = {
+        id:
+            crypto.randomUUID(),
+
+        userId,
+
+        prompt,
+
+        image:
+            imageUrl,
+
+        imageUrl,
+
+        type,
+
+        seed:
+            seed ?? null,
+
+        model:
+            model ?? null,
+
+        createdAt:
+            new Date()
+                .toISOString(),
+
+        ...extra
+    };
+
+    history.unshift(
+        item
+    );
+
+    if (
+        history.length >
+        1000
+    ) {
+        history.length =
+            1000;
+    }
 
     writeJSON(
-        HISTORY_FILE,
-        history.slice(0, 100)
+        HISTORY,
+        history
     );
+
+    return item;
 }
 
+/* =====================================================
+   MIDDLEWARE
+===================================================== */
+
+app.use(
+    cors({
+        origin:
+            process.env.CORS_ORIGIN ||
+            true,
+
+        credentials:
+            true
+    })
+);
+
+app.use(
+    express.json({
+        limit:
+            "15mb"
+    })
+);
+
+app.use(
+    express.urlencoded({
+        extended:
+            true,
+
+        limit:
+            "15mb"
+    })
+);
+
+app.use(
+    express.static(
+        PUBLIC
+    )
+);
+
+app.use(
+    "/generated",
+    express.static(
+        GENERATED,
+        {
+            maxAge: 0,
+            etag: false,
+            cacheControl: false
+        }
+    )
+);
+
+/* =====================================================
+   AUTH HELPERS
+===================================================== */
+
+function getToken(
+    req
+) {
+    const auth =
+        req.headers.authorization;
+
+    if (
+        auth &&
+        auth.startsWith(
+            "Bearer "
+        )
+    ) {
+        return auth
+            .substring(7)
+            .trim();
+    }
+
+    return null;
+}
+
+function currentUser(
+    req
+) {
+    const token =
+        getToken(req);
+
+    if (!token) {
+        return null;
+    }
+
+    const sessions =
+        readJSON(
+            SESSIONS,
+            []
+        );
+
+    const users =
+        readJSON(
+            USERS,
+            []
+        );
+
+    const session =
+        sessions.find(
+            s =>
+                s &&
+                s.token ===
+                    token
+        );
+
+    if (!session) {
+        return null;
+    }
+
+    const user =
+        users.find(
+            u =>
+                u &&
+                u.id ===
+                    session.userId
+        );
+
+    if (!user) {
+        return null;
+    }
+
+    return {
+        user,
+        token
+    };
+}
+
+function auth(
+    req,
+    res,
+    next
+) {
+    const result =
+        currentUser(req);
+
+    if (!result) {
+        return res
+            .status(401)
+            .json({
+                success:
+                    false,
+
+                message:
+                    "Please login first."
+            });
+    }
+
+    req.user =
+        result.user;
+
+    req.token =
+        result.token;
+
+    next();
+}
+
+const requireAuth =
+    auth;
+
+/* =====================================================
+   HEALTH
+===================================================== */
 
 app.get(
-    "/api/history",
-    requireAuth,
+    "/api/health",
     (req, res) => {
-
-        const history =
-            readJSON(
-                HISTORY_FILE,
-                []
-            );
-
-        const userHistory =
-            history.filter(
-                item =>
-                    item.userId ===
-                    req.user.id
-            );
-
         res.json({
+            success:
+                true,
 
-            success: true,
+            message:
+                "Yantra-X server is running.",
 
-            history:
-                userHistory
+            model:
+                process.env
+                    .CLOUDFLARE_MODEL ||
+                "@cf/black-forest-labs/flux-2-klein-4b",
 
+            cloudflareConfigured:
+                Boolean(
+                    process.env
+                        .CLOUDFLARE_ACCOUNT_ID &&
+                    process.env
+                        .CLOUDFLARE_API_TOKEN
+                ),
+
+            serpApiConfigured:
+                Boolean(
+                    process.env
+                        .SERPAPI_KEY
+                ),
+
+            realImageMode:
+                "Google Images -> server download -> local image"
         });
     }
 );
 
+/* =====================================================
+   SIGNUP
+===================================================== */
 
-// ============================================================
-// DELETE HISTORY
-// ============================================================
+app.post(
+    "/api/auth/signup",
+    (req, res) => {
+        try {
+            const {
+                name,
+                username,
+                email,
+                password
+            } =
+                req.body || {};
+
+            const cleanName =
+                String(
+                    name || ""
+                ).trim();
+
+            const cleanUsername =
+                String(
+                    username || ""
+                ).trim();
+
+            const cleanEmail =
+                String(
+                    email || ""
+                )
+                    .trim()
+                    .toLowerCase();
+
+            if (
+                !cleanName ||
+                !cleanUsername ||
+                !cleanEmail
+            ) {
+                return res
+                    .status(400)
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "All fields are required."
+                    });
+            }
+
+            if (
+                String(
+                    password || ""
+                ).length < 6
+            ) {
+                return res
+                    .status(400)
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Password must be at least 6 characters."
+                    });
+            }
+
+            const users =
+                readJSON(
+                    USERS,
+                    []
+                );
+
+            const exists =
+                users.some(
+                    u =>
+                        String(
+                            u.email || ""
+                        ).toLowerCase() ===
+                            cleanEmail ||
+                        String(
+                            u.username || ""
+                        ).toLowerCase() ===
+                            cleanUsername
+                                .toLowerCase()
+                );
+
+            if (exists) {
+                return res
+                    .status(409)
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Username or email already exists."
+                    });
+            }
+
+            const user = {
+                id:
+                    crypto.randomUUID(),
+
+                name:
+                    cleanName,
+
+                username:
+                    cleanUsername,
+
+                email:
+                    cleanEmail,
+
+                password:
+                    hashPassword(
+                        String(
+                            password
+                        )
+                    ),
+
+                createdAt:
+                    new Date()
+                        .toISOString()
+            };
+
+            users.push(
+                user
+            );
+
+            writeJSON(
+                USERS,
+                users
+            );
+
+            const token =
+                createToken();
+
+            const sessions =
+                readJSON(
+                    SESSIONS,
+                    []
+                );
+
+            sessions.push({
+                token,
+
+                userId:
+                    user.id,
+
+                createdAt:
+                    new Date()
+                        .toISOString()
+            });
+
+            writeJSON(
+                SESSIONS,
+                sessions
+            );
+
+            res.json({
+                success:
+                    true,
+
+                token,
+
+                user: {
+                    id:
+                        user.id,
+
+                    name:
+                        user.name,
+
+                    username:
+                        user.username,
+
+                    email:
+                        user.email
+                }
+            });
+        } catch (error) {
+            console.error(
+                "[YANTRA-X] Signup:",
+                error
+            );
+
+            res
+                .status(500)
+                .json({
+                    success:
+                        false,
+
+                    message:
+                        "Signup failed."
+                });
+        }
+    }
+);
+
+/* =====================================================
+   LOGIN
+===================================================== */
+
+app.post(
+    "/api/auth/login",
+    (req, res) => {
+        try {
+            const {
+                email,
+                username,
+                password
+            } =
+                req.body || {};
+
+            const identifier =
+                String(
+                    email ||
+                    username ||
+                    ""
+                )
+                    .trim()
+                    .toLowerCase();
+
+            if (
+                !identifier ||
+                !password
+            ) {
+                return res
+                    .status(400)
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Email/username and password are required."
+                    });
+            }
+
+            const users =
+                readJSON(
+                    USERS,
+                    []
+                );
+
+            const user =
+                users.find(
+                    u =>
+                        String(
+                            u.email || ""
+                        ).toLowerCase() ===
+                            identifier ||
+                        String(
+                            u.username || ""
+                        ).toLowerCase() ===
+                            identifier
+                );
+
+            if (
+                !user ||
+                !verifyPassword(
+                    String(password),
+                    user.password
+                )
+            ) {
+                return res
+                    .status(401)
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Invalid login details."
+                    });
+            }
+
+            const token =
+                createToken();
+
+            const sessions =
+                readJSON(
+                    SESSIONS,
+                    []
+                );
+
+            sessions.push({
+                token,
+
+                userId:
+                    user.id,
+
+                createdAt:
+                    new Date()
+                        .toISOString()
+            });
+
+            writeJSON(
+                SESSIONS,
+                sessions
+            );
+
+            res.json({
+                success:
+                    true,
+
+                token,
+
+                user: {
+                    id:
+                        user.id,
+
+                    name:
+                        user.name,
+
+                    username:
+                        user.username,
+
+                    email:
+                        user.email
+                }
+            });
+        } catch (error) {
+            console.error(
+                "[YANTRA-X] Login:",
+                error
+            );
+
+            res
+                .status(500)
+                .json({
+                    success:
+                        false,
+
+                    message:
+                        "Login failed."
+                });
+        }
+    }
+);
+/* =====================================================
+   ME
+===================================================== */
+
+app.get(
+    "/api/auth/me",
+    auth,
+    (req, res) => {
+        res.json({
+            success:
+                true,
+
+            user: {
+                id:
+                    req.user.id,
+
+                name:
+                    req.user.name,
+
+                username:
+                    req.user.username,
+
+                email:
+                    req.user.email
+            }
+        });
+    }
+);
+
+/* =====================================================
+   LOGOUT
+===================================================== */
+
+app.post(
+    "/api/auth/logout",
+    auth,
+    (req, res) => {
+        let sessions =
+            readJSON(
+                SESSIONS,
+                []
+            );
+
+        sessions =
+            sessions.filter(
+                s =>
+                    s.token !==
+                    req.token
+            );
+
+        writeJSON(
+            SESSIONS,
+            sessions
+        );
+
+        res.json({
+            success:
+                true
+        });
+    }
+);
+
+/* =====================================================
+   GENERATE / REAL IMAGE SEARCH
+===================================================== */
+
+app.post(
+    "/api/generate",
+    requireAuth,
+    async (
+        req,
+        res
+    ) => {
+        const startedAt =
+            Date.now();
+
+        try {
+            const prompt =
+                cleanPrompt(
+                    req.body?.prompt
+                );
+
+            if (!prompt) {
+                return res
+                    .status(400)
+                    .json({
+                        success:
+                            false,
+
+                        message:
+                            "Please enter an image prompt."
+                    });
+            }
+
+            const reference =
+                parseDataUrl(
+                    req.body
+                        ?.referenceImage
+                );
+
+            const width =
+                Number(
+                    req.body?.width
+                ) || 768;
+
+            const height =
+                Number(
+                    req.body?.height
+                ) || 768;
+
+            console.log(
+                `[YANTRA-X] User: ${req.user.username}`
+            );
+
+            console.log(
+                `[YANTRA-X] Prompt: ${prompt}`
+            );
+
+            console.log(
+                `[YANTRA-X] Uploaded reference: ${Boolean(reference)}`
+            );
+
+            /* =================================================
+               AI MODE
+
+               Example:
+
+               AI futuristic sports car
+               AI lion in forest
+
+               Cloudflare creates a NEW image.
+            ================================================= */
+
+            if (
+                isAIRequest(
+                    prompt
+                )
+            ) {
+                const aiPrompt =
+                    removeAIKeyword(
+                        prompt
+                    );
+
+                if (!aiPrompt) {
+                    return res
+                        .status(400)
+                        .json({
+                            success:
+                                false,
+
+                            message:
+                                "After AI, please describe the image you want."
+                        });
+                }
+
+                const result =
+                    await generateCloudflareImage(
+                        aiPrompt,
+                        {
+                            width,
+                            height,
+
+                            referenceImage:
+                                reference,
+
+                            autoReference:
+                                false
+                        }
+                    );
+
+                const localImage =
+                    persistBase64Image(
+                        result.image,
+                        result.mimeType
+                    );
+
+                const generationTime =
+                    Date.now() -
+                    startedAt;
+
+                const historyItem =
+                    saveHistory(
+                        req.user.id,
+                        prompt,
+                        localImage,
+                        reference
+                            ? "reference-generated"
+                            : "generated",
+                        result.seed,
+                        result.model,
+                        {
+                            usedReference:
+                                result.usedReference ||
+                                false,
+
+                            automaticReference:
+                                false
+                        }
+                    );
+
+                console.log(
+                    `[YANTRA-X] AI completed in ${generationTime}ms`
+                );
+
+                return res.json({
+                    success:
+                        true,
+
+                    type:
+                        "ai",
+
+                    image:
+                        localImage,
+
+                    imageUrl:
+                        localImage,
+
+                    seed:
+                        result.seed,
+
+                    model:
+                        result.model,
+
+                    prompt,
+
+                    generationPrompt:
+                        aiPrompt,
+
+                    usedReference:
+                        result.usedReference ||
+                        false,
+
+                    automaticReference:
+                        false,
+
+                    generationTime,
+
+                    history:
+                        historyItem
+                });
+            }
+
+            /* =================================================
+               REAL IMAGE MODE
+
+               Examples:
+
+               Dhoni
+               Lion
+               Taj Mahal
+               BMW M5
+               Virat Kohli
+
+               These use existing images from Google Images.
+
+               The server downloads the image and stores it
+               locally before returning it to the frontend.
+            ================================================= */
+
+            const realImage =
+                await searchRealImage(
+                    prompt
+                );
+
+            const generationTime =
+                Date.now() -
+                startedAt;
+
+            const historyItem =
+                saveHistory(
+                    req.user.id,
+
+                    prompt,
+
+                    realImage.imageUrl,
+
+                    "real",
+
+                    null,
+
+                    "Google Images",
+
+                    {
+                        title:
+                            realImage.title,
+
+                        source:
+                            realImage.source,
+
+                        sourceUrl:
+                            realImage.sourceUrl,
+
+                        originalUrl:
+                            realImage.originalUrl,
+
+                        originalWidth:
+                            realImage.originalWidth,
+
+                        originalHeight:
+                            realImage.originalHeight
+                    }
+                );
+
+            console.log(
+                `[YANTRA-X] REAL image downloaded in ${generationTime}ms`
+            );
+
+            return res.json({
+                success:
+                    true,
+
+                type:
+                    "real",
+
+                /*
+                 * IMPORTANT:
+                 *
+                 * The frontend receives the LOCAL
+                 * Yantra-X image URL.
+                 */
+                image:
+                    realImage.imageUrl,
+
+                imageUrl:
+                    realImage.imageUrl,
+
+                thumbnail:
+                    realImage.thumbnail,
+
+                title:
+                    realImage.title,
+
+                source:
+                    realImage.source,
+
+                sourceUrl:
+                    realImage.sourceUrl,
+
+                originalUrl:
+                    realImage.originalUrl,
+
+                originalWidth:
+                    realImage.originalWidth,
+
+                originalHeight:
+                    realImage.originalHeight,
+
+                prompt,
+
+                generationTime,
+
+                usedReference:
+                    false,
+
+                automaticReference:
+                    false,
+
+                history:
+                    historyItem
+            });
+        } catch (error) {
+            console.error(
+                "[YANTRA-X] GENERATION ERROR:",
+                error
+            );
+
+            const errorMessage =
+                error?.name ===
+                "AbortError"
+                    ? "The image source took too long to respond. Please try again."
+                    : error?.message ||
+                      "Image generation/search failed.";
+
+            res
+                .status(500)
+                .json({
+                    success:
+                        false,
+
+                    message:
+                        errorMessage
+                });
+        }
+    }
+);
+
+/* =====================================================
+   HISTORY
+===================================================== */
+
+app.get(
+    "/api/history",
+    auth,
+    (req, res) => {
+        const history =
+            readJSON(
+                HISTORY,
+                []
+            );
+
+        const userHistory =
+            Array.isArray(
+                history
+            )
+                ? history.filter(
+                    item =>
+                        item.userId ===
+                        req.user.id
+                )
+                : [];
+
+        res.json({
+            success:
+                true,
+
+            history:
+                userHistory.slice(
+                    0,
+                    100
+                )
+        });
+    }
+);
+
+/* =====================================================
+   DELETE HISTORY ITEM
+===================================================== */
+
+app.delete(
+    "/api/history/:id",
+    auth,
+    (req, res) => {
+        const history =
+            readJSON(
+                HISTORY,
+                []
+            );
+
+        const item =
+            history.find(
+                h =>
+                    h.id ===
+                        req.params.id &&
+                    h.userId ===
+                        req.user.id
+            );
+
+        if (
+            item &&
+            item.image
+        ) {
+            const relative =
+                String(
+                    item.image
+                )
+                    .replace(
+                        /^\/generated\//,
+                        ""
+                    )
+                    .replace(
+                        /^\/+/,
+                        ""
+                    );
+
+            const filePath =
+                path.resolve(
+                    GENERATED,
+                    relative
+                );
+
+            const generatedRoot =
+                path.resolve(
+                    GENERATED
+                ) + path.sep;
+
+            if (
+                filePath.startsWith(
+                    generatedRoot
+                ) &&
+                fs.existsSync(
+                    filePath
+                )
+            ) {
+                try {
+                    fs.unlinkSync(
+                        filePath
+                    );
+                } catch {}
+            }
+        }
+
+        const remaining =
+            history.filter(
+                h =>
+                    !(
+                        h.id ===
+                            req.params.id &&
+                        h.userId ===
+                            req.user.id
+                    )
+            );
+
+        writeJSON(
+            HISTORY,
+            remaining
+        );
+
+        res.json({
+            success:
+                true
+        });
+    }
+);
+
+/* =====================================================
+   CLEAR HISTORY
+===================================================== */
 
 app.delete(
     "/api/history",
-    requireAuth,
+    auth,
     (req, res) => {
-
         const history =
             readJSON(
-                HISTORY_FILE,
+                HISTORY,
                 []
             );
+
+        for (
+            const item
+            of history
+        ) {
+            if (
+                item.userId !==
+                req.user.id
+            ) {
+                continue;
+            }
+
+            if (!item.image) {
+                continue;
+            }
+
+            const relative =
+                String(
+                    item.image
+                )
+                    .replace(
+                        /^\/generated\//,
+                        ""
+                    )
+                    .replace(
+                        /^\/+/,
+                        ""
+                    );
+
+            const filePath =
+                path.resolve(
+                    GENERATED,
+                    relative
+                );
+
+            const generatedRoot =
+                path.resolve(
+                    GENERATED
+                ) + path.sep;
+
+            if (
+                filePath.startsWith(
+                    generatedRoot
+                ) &&
+                fs.existsSync(
+                    filePath
+                )
+            ) {
+                try {
+                    fs.unlinkSync(
+                        filePath
+                    );
+                } catch {}
+            }
+        }
 
         const remaining =
             history.filter(
@@ -995,148 +2011,278 @@ app.delete(
             );
 
         writeJSON(
-            HISTORY_FILE,
+            HISTORY,
             remaining
         );
 
         res.json({
-
-            success: true,
-
-            message:
-                "History deleted."
-
+            success:
+                true
         });
     }
 );
 
+/* =====================================================
+   SEARCH API
+===================================================== */
 
-// ============================================================
-// ROOT
-// ============================================================
+app.get(
+    "/api/search",
+    auth,
+    async (
+        req,
+        res
+    ) => {
+        try {
+            const key =
+                process.env
+                    .SERPAPI_KEY;
 
-app.get("/", (req, res) => {
+            if (!key) {
+                return res
+                    .status(503)
+                    .json({
+                        success:
+                            false,
 
-    res.sendFile(
-        path.join(
-            __dirname,
-            "public",
-            "index.html"
-        )
-    );
-});
+                        message:
+                            "SERPAPI_KEY is not configured."
+                    });
+            }
 
+            const q =
+                String(
+                    req.query.q ||
+                    ""
+                ).trim();
 
-// ============================================================
-// API 404
-// ============================================================
+            if (!q) {
+                return res
+                    .status(400)
+                    .json({
+                        success:
+                            false,
 
-app.use("/api", (req, res) => {
+                        message:
+                            "Search query is required."
+                    });
+            }
 
-    res.status(404).json({
+            const url =
+                new URL(
+                    "https://serpapi.com/search.json"
+                );
 
-        success: false,
+            url.searchParams.set(
+                "engine",
+                "google_images"
+            );
 
-        message:
-            "API endpoint not found."
+            url.searchParams.set(
+                "q",
+                q
+            );
 
-    });
-});
+            url.searchParams.set(
+                "api_key",
+                key
+            );
 
+            url.searchParams.set(
+                "hl",
+                "en"
+            );
 
-// ============================================================
-// GENERAL ERROR
-// ============================================================
+            url.searchParams.set(
+                "gl",
+                "in"
+            );
+
+            url.searchParams.set(
+                "image_type",
+                "photo"
+            );
+
+            url.searchParams.set(
+                "safe",
+                "active"
+            );
+
+            const response =
+                await fetch(
+                    url
+                );
+
+            const data =
+                await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data?.error ||
+                    "Search failed."
+                );
+            }
+
+            res.json({
+                success:
+                    true,
+
+                results:
+                    data
+                        .organic_results ||
+                    [],
+
+                images:
+                    data
+                        .images_results ||
+                    []
+            });
+        } catch (error) {
+            console.error(
+                "[YANTRA-X] Search:",
+                error
+            );
+
+            res
+                .status(500)
+                .json({
+                    success:
+                        false,
+
+                    message:
+                        error?.message ||
+                        "Search failed."
+                });
+        }
+    }
+);
+/* =====================================================
+   FRONTEND
+===================================================== */
+
+app.get(
+    "/",
+    (req, res) => {
+        res.sendFile(
+            path.join(
+                PUBLIC,
+                "index.html"
+            )
+        );
+    }
+);
+
+/* =====================================================
+   API 404
+===================================================== */
 
 app.use(
-    (err, req, res, next) => {
+    "/api",
+    (req, res) => {
+        res
+            .status(404)
+            .json({
+                success:
+                    false,
 
-        console.error(err);
-
-        res.status(500).json({
-
-            success: false,
-
-            message:
-                "Server error."
-
-        });
+                message:
+                    "API endpoint not found."
+            });
     }
 );
 
+/* =====================================================
+   ERROR HANDLER
+===================================================== */
 
-// ============================================================
-// START
-// ============================================================
+app.use(
+    (
+        error,
+        req,
+        res,
+        next
+    ) => {
+        console.error(
+            "[YANTRA-X] Server error:",
+            error
+        );
+
+        if (
+            res.headersSent
+        ) {
+            return next(
+                error
+            );
+        }
+
+        res
+            .status(500)
+            .json({
+                success:
+                    false,
+
+                message:
+                    error?.message ||
+                    "Internal server error."
+            });
+    }
+);
+
+/* =====================================================
+   START SERVER
+===================================================== */
 
 app.listen(
     PORT,
     () => {
-
-        console.log("");
         console.log(
-            "=========================================="
+            "\n================================="
         );
 
         console.log(
-            "          YANTRA-X SERVER"
+            "          YANTRA-X"
         );
 
         console.log(
-            "=========================================="
+            "================================="
         );
 
         console.log(
-            `Server running on port ${PORT}`
+            `http://localhost:${PORT}`
         );
 
         console.log(
-            `Local: http://localhost:${PORT}`
+            "AI model:",
+            process.env
+                .CLOUDFLARE_MODEL ||
+            "@cf/black-forest-labs/flux-2-klein-4b"
         );
 
         console.log(
-            ""
+            "Cloudflare configured:",
+            Boolean(
+                process.env
+                    .CLOUDFLARE_ACCOUNT_ID &&
+                process.env
+                    .CLOUDFLARE_API_TOKEN
+            )
         );
 
         console.log(
-            "POST /api/register"
+            "SerpApi configured:",
+            Boolean(
+                process.env
+                    .SERPAPI_KEY
+            )
         );
 
         console.log(
-            "POST /api/login"
+            "REAL IMAGE MODE:",
+            "Google Images -> local download"
         );
 
         console.log(
-            "POST /api/logout"
+            "=================================\n"
         );
-
-        console.log(
-            "GET  /api/me"
-        );
-
-        console.log(
-            "GET  /api/history"
-        );
-
-        console.log(
-            "DELETE /api/history"
-        );
-
-        console.log(
-            "POST /api/generate"
-        );
-
-        console.log(
-            "POST /api/generate-ai"
-        );
-
-        console.log(
-            "POST /api/search-image"
-        );
-
-        console.log(
-            "=========================================="
-        );
-
     }
 );

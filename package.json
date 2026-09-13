@@ -1,15 +1,19 @@
 {
   "name": "yantra-x",
-  "version": "1.0.0",
+  "version": "4.0.0",
   "description": "Yantra-X AI Image Generator",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
+  "engines": {
+    "node": ">=18.17"
+  },
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^16.6.1",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "sharp": "^0.35.4"
   }
 }

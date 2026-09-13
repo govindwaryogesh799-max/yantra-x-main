@@ -1,3 +1,27 @@
-{
-  "8b5f08d6776a70c50471eafaeaa0ab80492fe0be230c015b07930ebbe7861c17": "7647a96d-491e-4db6-9de9-7e6631d6e5c9"
-}
+[
+  {
+    "id": "0b6c7d77-e2ab-4876-9f8d-fb5cfc52c5f1",
+    "userId": "7647a96d-491e-4db6-9de9-7e6631d6e5c9",
+    "tokenHash": "2aff49107bd31c1b3c58ceb67eca3e4c0412f95f7b7c4fa5d451d3cae00dbee9",
+    "createdAt": "2026-09-04T17:27:57.353Z",
+    "expiresAt": "2026-10-04T17:27:57.353Z"
+  },
+  {
+    "id": "8bcd6e1e-5daf-4a78-a5f4-e28c0b41edcf",
+    "userId": "e0d0b33f-3a2f-4381-bea9-5fc362f4bebe",
+    "tokenHash": "83b9b5de59fbaa392a6fd0ca6e02b6b67685393590e0d0065800b80cd527de30",
+    "createdAt": "2026-09-04T17:27:57.353Z",
+    "expiresAt": "2026-10-04T17:27:57.353Z"
+  },
+  {
+    "tokenHash": "7d7d12c9556283db36c1a2dd3ae04d22e853cbb4a95d02fd79493e03fb4dc4f9",
+    "userId": "92839eb5-341d-4b96-9bea-518044c231e0",
+    "createdAt": "2026-09-05T09:49:01.163Z",
+    "expiresAt": "2026-10-05T09:49:01.163Z"
+  },
+  {
+    "token": "b6e0448cd7bafbf9bb3f211e6c9cd1495a7778103b6900e43850ebd9f1441a11",
+    "userId": "a51eb374-c113-4162-ba02-1f967a645fe7",
+    "createdAt": "2026-09-10T08:06:29.343Z"
+  }
+]

@@ -1,4 +1,10 @@
-.env
 node_modules/
-.venv/
-__pycache__/
+.env
+generated/*.png
+generated/*.jpg
+generated/*.jpeg
+data/users.json
+data/sessions.json
+data/history.json
+npm-debug.log*
+.DS_Store
