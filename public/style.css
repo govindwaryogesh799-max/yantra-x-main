@@ -534,3 +534,46 @@ a {
         flex: 1;
     }
 }
+
+
+
+/* =====================================
+   YANTRA-X DARK DROPDOWN THEME
+===================================== */
+
+.settings select {
+    width: 100%;
+    background-color: #151a2e;
+    color: #f5f7ff;
+    color-scheme: dark;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 14px;
+    font-size: 16px;
+    cursor: pointer;
+    outline: none;
+    appearance: auto;
+}
+
+/* Dropdown options */
+.settings select option {
+    background-color: #11182d;
+    color: #f5f7ff;
+    padding: 12px;
+}
+
+/* Selected option */
+.settings select option:checked {
+    background-color: #5b8cff;
+    color: #ffffff;
+}
+
+/* Hover and focus */
+.settings select:hover {
+    border-color: #7c5cff;
+}
+
+.settings select:focus {
+    border-color: #7c5cff;
+    box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.15);
+}
